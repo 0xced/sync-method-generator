@@ -140,17 +140,21 @@ namespace Test;
 
         if (uniqueForFramework)
         {
-            verifier = verifier.UniqueForTargetFrameworkAndVersion();
+            verifier.UniqueForTargetFrameworkAndVersion();
         }
 
         if (disableUnique)
         {
-            verifier = verifier.DisableRequireUniquePrefix();
+            verifier.DisableRequireUniquePrefix();
         }
 
-        if (parameters is { Length: > 0 })
+        if (parameters.Length == 0)
         {
-            verifier = verifier.UseParameters(parameters);
+            verifier.IgnoreParameters();
+        }
+        else
+        {
+            verifier.UseParameters(parameters);
         }
 
         return verifier;

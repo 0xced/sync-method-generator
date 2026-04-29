@@ -5,6 +5,8 @@ namespace Generator.Tests;
 
 public class IncrementalGeneratorTests
 {
+    private static CancellationToken CancellationToken => TestContext.Current.CancellationToken;
+
     [Theory]
     [InlineData(
         IncrementalStepRunReason.Cached,
@@ -84,7 +86,7 @@ public class IncrementalGeneratorTests
         string source,
         string sourceUpdated)
     {
-        var baseSyntaxTree = CSharpSyntaxTree.ParseText(source);
+        var baseSyntaxTree = CSharpSyntaxTree.ParseText(source, cancellationToken: CancellationToken);
 
         Compilation compilation = CSharpCompilation.Create(
             "compilation",
@@ -99,11 +101,11 @@ public class IncrementalGeneratorTests
             driverOptions: new GeneratorDriverOptions(default, trackIncrementalGeneratorSteps: true));
 
         // Run the generator
-        driver = driver.RunGenerators(compilation);
+        driver = driver.RunGenerators(compilation, CancellationToken);
 
         // Update the compilation and rerun the generator
-        compilation = compilation.ReplaceSyntaxTree(baseSyntaxTree, CSharpSyntaxTree.ParseText(sourceUpdated));
-        driver = driver.RunGenerators(compilation);
+        compilation = compilation.ReplaceSyntaxTree(baseSyntaxTree, CSharpSyntaxTree.ParseText(sourceUpdated, cancellationToken: CancellationToken));
+        driver = driver.RunGenerators(compilation, CancellationToken);
 
         var result = driver.GetRunResult().Results.Single();
         var sourceOutputs =
