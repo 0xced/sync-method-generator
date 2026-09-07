@@ -1516,7 +1516,6 @@ internal sealed class AsyncToSyncRewriter(SemanticModel semanticModel, bool disa
         => symbol switch
         {
             INamedTypeSymbol { Name: "AsyncEnumerable" } => Global("System.Linq.Enumerable"),
-            INamedTypeSymbol { Name: "EntityFrameworkQueryableExtensions" } => Global("System.Linq.Queryable"),
             INamedTypeSymbol => symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
             _ => symbol.Name,
         };
@@ -2067,19 +2066,22 @@ internal sealed class AsyncToSyncRewriter(SemanticModel semanticModel, bool disa
         var newName = reducedFrom.Name;
         newName = changeMemoryToSpan ? ReplaceWithSpan(reducedFrom) : RemoveAsync(newName);
 
-        var membersWithNewNameInContainingType = semanticModel.Compilation.References
-            .Select(semanticModel.Compilation.GetAssemblyOrModuleSymbol)
-            .Append(semanticModel.Compilation.Assembly)
-            .OfType<IAssemblySymbol>()
-            .Select(assemblySymbol => assemblySymbol.GetTypeByMetadataName(containingType.ToString()))
-            .OfType<INamedTypeSymbol>()
-            .SelectMany(symbol => symbol.GetMembers(newName));
+        var (enumerableMembers, queryableMembers) = semanticModel.Compilation.GetLinqMembers();
 
-        // When the method is an AsyncEnumerable extension it must be converted to the corresponding Enumerable extension
-        // regardless of the containing type featuring members with compatible names
-        var fullyQualifiedName = !containingType.Name.Equals("AsyncEnumerable", StringComparison.Ordinal) && membersWithNewNameInContainingType.Any()
-            ? $"{containingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}.{newName}"
-            : $"{MakeType(containingType)}.{newName}";
+        var fullyQualifiedName = $"{MakeType(containingType)}.{newName}";
+
+        // Supports EntityFrameworkQueryableExtensions and potentially other queryable extensions
+        if (containingType.Name.EndsWith("QueryableExtensions", StringComparison.OrdinalIgnoreCase))
+        {
+            if (queryableMembers.Contains(newName))
+            {
+                fullyQualifiedName = $"{Global("System.Linq.Queryable")}.{newName}";
+            }
+            else if (enumerableMembers.Contains(newName))
+            {
+                fullyQualifiedName = $"{Global("System.Linq.Enumerable")}.{newName}";
+            }
+        }
 
         var es = (ies.Expression switch
         {
