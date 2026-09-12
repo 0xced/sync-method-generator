@@ -94,6 +94,7 @@ internal sealed class AsyncToSyncRewriter(SemanticModel semanticModel, bool disa
     private readonly ImmutableArray<ReportedDiagnostic>.Builder diagnostics = ImmutableArray.CreateBuilder<ReportedDiagnostic>();
     private readonly Stack<ExpressionSyntax> replaceInInvocation = new();
     private bool yielding;
+    private (ISet<string> EnumerableMembers, ISet<string> QueryableMembers)? linqMembers;
     private bool droppingAsync;
     private bool callingSpanProperty;
 
@@ -2066,13 +2067,15 @@ internal sealed class AsyncToSyncRewriter(SemanticModel semanticModel, bool disa
         var newName = reducedFrom.Name;
         newName = changeMemoryToSpan ? ReplaceWithSpan(reducedFrom) : RemoveAsync(newName);
 
-        var (enumerableMembers, queryableMembers) = semanticModel.Compilation.GetLinqMembers();
-
         var fullyQualifiedName = $"{MakeType(containingType)}.{newName}";
 
-        // Supports EntityFrameworkQueryableExtensions and potentially other queryable extensions
-        if (containingType.Name.EndsWith("QueryableExtensions", StringComparison.OrdinalIgnoreCase))
+        // Supports EntityFrameworkQueryableExtensions and potentially other queryable extensions.
+        // A sync counterpart declared beside the async method wins, as EF Core's ExecuteDelete does.
+        if (containingType.Name.EndsWith("QueryableExtensions", StringComparison.Ordinal)
+            && containingType.GetMembers(newName).IsEmpty)
         {
+            var (enumerableMembers, queryableMembers) = linqMembers ??= semanticModel.Compilation.GetLinqMembers();
+
             if (queryableMembers.Contains(newName))
             {
                 fullyQualifiedName = $"{Global("System.Linq.Queryable")}.{newName}";
